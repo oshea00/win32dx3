@@ -2,10 +2,7 @@
 // MathHelper.cpp by Frank Luna (C) 2011 All Rights Reserved.
 // MikeO - adapted to DX 11.1
 //***************************************************************************************
-#include <windows.h>
-#include <d3d11_1.h>
-#include <d3dcompiler.h>
-#include <directxmath.h>
+
 #include "MathHelper.h"
 #include <float.h>
 #include <cmath>
