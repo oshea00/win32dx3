@@ -86,9 +86,6 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Example.fx">
-      <Filter>Source Files\Shaders</Filter>
-    </FxCompile>
     <FxCompile Include="color.fx">
       <Filter>Source Files\Shaders</Filter>
     </FxCompile>

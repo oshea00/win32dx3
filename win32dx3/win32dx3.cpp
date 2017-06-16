@@ -1,5 +1,5 @@
 //***************************************************************************************
-// HillsDemo.cpp by Frank Luna (C) 2011 All Rights Reserved.
+// win32dx3.cpp - Example app ported from 3D Game Programming Hills demo
 //
 // Demonstrates drawing hills using a grid and 2D function to set the height of each vertex.
 //
