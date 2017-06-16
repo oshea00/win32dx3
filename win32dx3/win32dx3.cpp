@@ -1,33 +1,33 @@
 //***************************************************************************************
-// WavesDemo.cpp ported by Mike O'Shea from Frank Luna (C) 2011 All Rights Reserved.
+// LitSkullDemo.cpp by Frank Luna (C) 2011 All Rights Reserved.
 //
-// Demonstrates dynamic vertex buffers by performing an animated wave simulation where
-// the vertex buffers are updated every frame with the new snapshot of the wave simulation.
+// Demonstrates lighting using 3 directional lights.
 //
 // Controls:
 //		Hold the left mouse button down and move the mouse to rotate.
 //      Hold the right mouse button down to zoom in and out.
+//      Press '1', '2', '3' for 1, 2, or 3 lights enabled.
 //
 //***************************************************************************************
 
+#include <d3d11_1.h>
+#include <directxmath.h>
+#include "D3DUtil.h"
 #include "d3dApp.h"
 #include "d3dx11Effect.h"
 #include "GeometryGenerator.h"
 #include "MathHelper.h"
 #include "LightHelper.h"
-#include "Waves.h"
+#include "Effects.h"
+#include "Vertex.h"
 
-struct Vertex
-{
-	XMFLOAT3 Pos;
-	XMFLOAT3 Normal;
-};
+using namespace DirectX;
 
-class LightingApp : public D3DApp
+class LitSkullApp : public D3DApp
 {
 public:
-	LightingApp(HINSTANCE hInstance);
-	~LightingApp();
+	LitSkullApp(HINSTANCE hInstance);
+	~LitSkullApp();
 
 	bool Init();
 	void OnResize();
@@ -39,48 +39,51 @@ public:
 	void OnMouseMove(WPARAM btnState, int x, int y);
 
 private:
-	float GetHillHeight(float x, float z)const;
-	XMFLOAT3 GetHillNormal(float x, float z)const;
-	void BuildLandGeometryBuffers();
-	void BuildWaveGeometryBuffers();
-	void BuildFX();
-	void BuildVertexLayout();
+	void BuildShapeGeometryBuffers();
+	void BuildSkullGeometryBuffers();
 
 private:
-	ID3D11Buffer* mLandVB;
-	ID3D11Buffer* mLandIB;
+	ID3D11Buffer* mShapesVB;
+	ID3D11Buffer* mShapesIB;
 
-	ID3D11Buffer* mWavesVB;
-	ID3D11Buffer* mWavesIB;
+	ID3D11Buffer* mSkullVB;
+	ID3D11Buffer* mSkullIB;
 
-	Waves mWaves;
-	DirectionalLight mDirLight;
-	PointLight mPointLight;
-	SpotLight mSpotLight;
-	Material mLandMat;
-	Material mWavesMat;
-
-	ID3DX11Effect* mFX;
-	ID3DX11EffectTechnique* mTech;
-	ID3DX11EffectMatrixVariable* mfxWorldViewProj;
-	ID3DX11EffectMatrixVariable* mfxWorld;
-	ID3DX11EffectMatrixVariable* mfxWorldInvTranspose;
-	ID3DX11EffectVectorVariable* mfxEyePosW;
-	ID3DX11EffectVariable* mfxDirLight;
-	ID3DX11EffectVariable* mfxPointLight;
-	ID3DX11EffectVariable* mfxSpotLight;
-	ID3DX11EffectVariable* mfxMaterial;
-
-	ID3D11InputLayout* mInputLayout;
+	DirectionalLight mDirLights[3];
+	Material mGridMat;
+	Material mBoxMat;
+	Material mCylinderMat;
+	Material mSphereMat;
+	Material mSkullMat;
 
 	// Define transformations from local spaces to world space.
-	XMFLOAT4X4 mLandWorld;
-	XMFLOAT4X4 mWavesWorld;
+	XMFLOAT4X4 mSphereWorld[10];
+	XMFLOAT4X4 mCylWorld[10];
+	XMFLOAT4X4 mBoxWorld;
+	XMFLOAT4X4 mGridWorld;
+	XMFLOAT4X4 mSkullWorld;
 
 	XMFLOAT4X4 mView;
 	XMFLOAT4X4 mProj;
 
-	UINT mLandIndexCount;
+	int mBoxVertexOffset;
+	int mGridVertexOffset;
+	int mSphereVertexOffset;
+	int mCylinderVertexOffset;
+
+	UINT mBoxIndexOffset;
+	UINT mGridIndexOffset;
+	UINT mSphereIndexOffset;
+	UINT mCylinderIndexOffset;
+
+	UINT mBoxIndexCount;
+	UINT mGridIndexCount;
+	UINT mSphereIndexCount;
+	UINT mCylinderIndexCount;
+
+	UINT mSkullIndexCount;
+
+	UINT mLightCount;
 
 	XMFLOAT3 mEyePosW;
 
@@ -99,7 +102,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
 
-	LightingApp theApp(hInstance);
+	LitSkullApp theApp(hInstance);
 
 	if (!theApp.Init())
 		return 0;
@@ -108,84 +111,100 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 }
 
 
-LightingApp::LightingApp(HINSTANCE hInstance)
-	: D3DApp(hInstance), mLandVB(0), mLandIB(0), mWavesVB(0), mWavesIB(0),
-	mFX(0), mTech(0), mfxWorld(0), mfxWorldInvTranspose(0), mfxEyePosW(0),
-	mfxDirLight(0), mfxPointLight(0), mfxSpotLight(0), mfxMaterial(0),
-	mfxWorldViewProj(0),
-	mInputLayout(0), mEyePosW(0.0f, 0.0f, 0.0f), mTheta(1.5f*MathHelper::Pi), mPhi(0.1f*MathHelper::Pi), mRadius(80.0f)
+LitSkullApp::LitSkullApp(HINSTANCE hInstance)
+	: D3DApp(hInstance), mShapesVB(0), mShapesIB(0), mSkullVB(0), mSkullIB(0), mSkullIndexCount(0), mLightCount(1),
+	mEyePosW(0.0f, 0.0f, 0.0f), mTheta(1.5f*MathHelper::Pi), mPhi(0.1f*MathHelper::Pi), mRadius(15.0f)
 {
-	mMainWndCaption = L"Lighting Demo";
+	mMainWndCaption = L"LitSkull Demo";
 
 	mLastMousePos.x = 0;
 	mLastMousePos.y = 0;
 
 	XMMATRIX I = XMMatrixIdentity();
-	XMStoreFloat4x4(&mLandWorld, I);
-	XMStoreFloat4x4(&mWavesWorld, I);
+	XMStoreFloat4x4(&mGridWorld, I);
 	XMStoreFloat4x4(&mView, I);
 	XMStoreFloat4x4(&mProj, I);
 
-	XMMATRIX wavesOffset = XMMatrixTranslation(0.0f, -3.0f, 0.0f);
-	XMStoreFloat4x4(&mWavesWorld, wavesOffset);
+	XMMATRIX boxScale = XMMatrixScaling(3.0f, 1.0f, 3.0f);
+	XMMATRIX boxOffset = XMMatrixTranslation(0.0f, 0.5f, 0.0f);
+	XMStoreFloat4x4(&mBoxWorld, XMMatrixMultiply(boxScale, boxOffset));
 
-	// Directional light.
-	mDirLight.Ambient = XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f);
-	mDirLight.Diffuse = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
-	mDirLight.Specular = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
-	mDirLight.Direction = XMFLOAT3(0.57735f, -0.57735f, 0.57735f);
+	XMMATRIX skullScale = XMMatrixScaling(0.5f, 0.5f, 0.5f);
+	XMMATRIX skullOffset = XMMatrixTranslation(0.0f, 1.0f, 0.0f);
+	XMStoreFloat4x4(&mSkullWorld, XMMatrixMultiply(skullScale, skullOffset));
 
-	// Point light--position is changed every frame to animate in UpdateScene function.
-	mPointLight.Ambient = XMFLOAT4(0.3f, 0.3f, 0.3f, 1.0f);
-	mPointLight.Diffuse = XMFLOAT4(0.7f, 0.7f, 0.7f, 1.0f);
-	mPointLight.Specular = XMFLOAT4(0.7f, 0.7f, 0.7f, 1.0f);
-	mPointLight.Att = XMFLOAT3(0.0f, 0.1f, 0.0f);
-	mPointLight.Range = 25.0f;
+	for (int i = 0; i < 5; ++i)
+	{
+		XMStoreFloat4x4(&mCylWorld[i * 2 + 0], XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i*5.0f));
+		XMStoreFloat4x4(&mCylWorld[i * 2 + 1], XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i*5.0f));
 
-	// Spot light--position and direction changed every frame to animate in UpdateScene function.
-	mSpotLight.Ambient = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
-	mSpotLight.Diffuse = XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f);
-	mSpotLight.Specular = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	mSpotLight.Att = XMFLOAT3(1.0f, 0.0f, 0.0f);
-	mSpotLight.Spot = 96.0f;
-	mSpotLight.Range = 10000.0f;
+		XMStoreFloat4x4(&mSphereWorld[i * 2 + 0], XMMatrixTranslation(-5.0f, 3.5f, -10.0f + i*5.0f));
+		XMStoreFloat4x4(&mSphereWorld[i * 2 + 1], XMMatrixTranslation(+5.0f, 3.5f, -10.0f + i*5.0f));
+	}
 
-	mLandMat.Ambient = XMFLOAT4(0.48f, 0.77f, 0.46f, 1.0f);
-	mLandMat.Diffuse = XMFLOAT4(0.48f, 0.77f, 0.46f, 1.0f);
-	mLandMat.Specular = XMFLOAT4(0.2f, 0.2f, 0.2f, 16.0f);
+	mDirLights[0].Ambient = XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f);
+	mDirLights[0].Diffuse = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
+	mDirLights[0].Specular = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
+	mDirLights[0].Direction = XMFLOAT3(0.57735f, -0.57735f, 0.57735f);
 
-	mWavesMat.Ambient = XMFLOAT4(0.137f, 0.42f, 0.556f, 1.0f);
-	mWavesMat.Diffuse = XMFLOAT4(0.137f, 0.42f, 0.556f, 1.0f);
-	mWavesMat.Specular = XMFLOAT4(0.8f, 0.8f, 0.8f, 96.0f);
+	mDirLights[1].Ambient = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+	mDirLights[1].Diffuse = XMFLOAT4(0.20f, 0.20f, 0.20f, 1.0f);
+	mDirLights[1].Specular = XMFLOAT4(0.25f, 0.25f, 0.25f, 1.0f);
+	mDirLights[1].Direction = XMFLOAT3(-0.57735f, -0.57735f, 0.57735f);
+
+	mDirLights[2].Ambient = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+	mDirLights[2].Diffuse = XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f);
+	mDirLights[2].Specular = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+	mDirLights[2].Direction = XMFLOAT3(0.0f, -0.707f, -0.707f);
+
+	mGridMat.Ambient = XMFLOAT4(0.48f, 0.77f, 0.46f, 1.0f);
+	mGridMat.Diffuse = XMFLOAT4(0.48f, 0.77f, 0.46f, 1.0f);
+	mGridMat.Specular = XMFLOAT4(0.2f, 0.2f, 0.2f, 16.0f);
+
+	mCylinderMat.Ambient = XMFLOAT4(0.7f, 0.85f, 0.7f, 1.0f);
+	mCylinderMat.Diffuse = XMFLOAT4(0.7f, 0.85f, 0.7f, 1.0f);
+	mCylinderMat.Specular = XMFLOAT4(0.8f, 0.8f, 0.8f, 16.0f);
+
+	mSphereMat.Ambient = XMFLOAT4(0.1f, 0.2f, 0.3f, 1.0f);
+	mSphereMat.Diffuse = XMFLOAT4(0.2f, 0.4f, 0.6f, 1.0f);
+	mSphereMat.Specular = XMFLOAT4(0.9f, 0.9f, 0.9f, 16.0f);
+
+	mBoxMat.Ambient = XMFLOAT4(0.651f, 0.5f, 0.392f, 1.0f);
+	mBoxMat.Diffuse = XMFLOAT4(0.651f, 0.5f, 0.392f, 1.0f);
+	mBoxMat.Specular = XMFLOAT4(0.2f, 0.2f, 0.2f, 16.0f);
+
+	mSkullMat.Ambient = XMFLOAT4(0.8f, 0.8f, 0.8f, 1.0f);
+	mSkullMat.Diffuse = XMFLOAT4(0.8f, 0.8f, 0.8f, 1.0f);
+	mSkullMat.Specular = XMFLOAT4(0.8f, 0.8f, 0.8f, 16.0f);
 }
 
-LightingApp::~LightingApp()
+LitSkullApp::~LitSkullApp()
 {
-	ReleaseCOM(mLandVB);
-	ReleaseCOM(mLandIB);
-	ReleaseCOM(mWavesVB);
-	ReleaseCOM(mWavesIB);
+	ReleaseCOM(mShapesVB);
+	ReleaseCOM(mShapesIB);
+	ReleaseCOM(mSkullVB);
+	ReleaseCOM(mSkullIB);
 
-	ReleaseCOM(mFX);
-	ReleaseCOM(mInputLayout);
+	Effects::DestroyAll();
+	InputLayouts::DestroyAll();
 }
 
-bool LightingApp::Init()
+bool LitSkullApp::Init()
 {
 	if (!D3DApp::Init())
 		return false;
 
-	mWaves.Init(160, 160, 1.0f, 0.03f, 3.25f, 0.4f);
+	// Must init Effects first since InputLayouts depend on shader signatures.
+	Effects::InitAll(md3dDevice);
+	InputLayouts::InitAll(md3dDevice);
 
-	BuildLandGeometryBuffers();
-	BuildWaveGeometryBuffers();
-	BuildFX();
-	BuildVertexLayout();
+	BuildShapeGeometryBuffers();
+	BuildSkullGeometryBuffers();
 
 	return true;
 }
 
-void LightingApp::OnResize()
+void LitSkullApp::OnResize()
 {
 	D3DApp::OnResize();
 
@@ -193,7 +212,7 @@ void LightingApp::OnResize()
 	XMStoreFloat4x4(&mProj, P);
 }
 
-void LightingApp::UpdateScene(float dt)
+void LitSkullApp::UpdateScene(float dt)
 {
 	// Convert Spherical to Cartesian coordinates.
 	float x = mRadius*sinf(mPhi)*cosf(mTheta);
@@ -211,66 +230,30 @@ void LightingApp::UpdateScene(float dt)
 	XMStoreFloat4x4(&mView, V);
 
 	//
-	// Every quarter second, generate a random wave.
+	// Switch the number of lights based on key presses.
 	//
-	static float t_base = 0.0f;
-	if ((mTimer.TotalTime() - t_base) >= 0.25f)
-	{
-		t_base += 0.25f;
+	if (GetAsyncKeyState('0') & 0x8000)
+		mLightCount = 0;
 
-		DWORD i = 5 + rand() % (mWaves.RowCount() - 10);
-		DWORD j = 5 + rand() % (mWaves.ColumnCount() - 10);
+	if (GetAsyncKeyState('1') & 0x8000)
+		mLightCount = 1;
 
-		float r = MathHelper::RandF(1.0f, 2.0f);
+	if (GetAsyncKeyState('2') & 0x8000)
+		mLightCount = 2;
 
-		mWaves.Disturb(i, j, r);
-	}
-
-	mWaves.Update(dt);
-
-	//
-	// Update the wave vertex buffer with the new solution.
-	//
-
-	D3D11_MAPPED_SUBRESOURCE mappedData;
-	HR(md3dImmediateContext->Map(mWavesVB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedData));
-
-	Vertex* v = reinterpret_cast<Vertex*>(mappedData.pData);
-	for (UINT i = 0; i < mWaves.VertexCount(); ++i)
-	{
-		v[i].Pos = mWaves[i];
-		v[i].Normal = mWaves.Normal(i);
-	}
-
-	md3dImmediateContext->Unmap(mWavesVB, 0);
-
-	//
-	// Animate the lights.
-	//
-
-	// Circle light over the land surface.
-	mPointLight.Position.x = 70.0f*cosf(0.2f*mTimer.TotalTime());
-	mPointLight.Position.z = 70.0f*sinf(0.2f*mTimer.TotalTime());
-	mPointLight.Position.y = MathHelper::Max(GetHillHeight(mPointLight.Position.x,
-		mPointLight.Position.z), -3.0f) + 10.0f;
-
-
-	// The spotlight takes on the camera position and is aimed in the
-	// same direction the camera is looking.  In this way, it looks
-	// like we are holding a flashlight.
-	mSpotLight.Position = mEyePosW;
-	XMStoreFloat3(&mSpotLight.Direction, XMVector3Normalize(target - pos));
+	if (GetAsyncKeyState('3') & 0x8000)
+		mLightCount = 3;
 }
 
-void LightingApp::DrawScene()
+void LitSkullApp::DrawScene()
 {
 	md3dImmediateContext->ClearRenderTargetView(mRenderTargetView, reinterpret_cast<const float*>(&Colors::LightSteelBlue));
 	md3dImmediateContext->ClearDepthStencilView(mDepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
-	md3dImmediateContext->IASetInputLayout(mInputLayout);
+	md3dImmediateContext->IASetInputLayout(InputLayouts::PosNormal);
 	md3dImmediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	UINT stride = sizeof(Vertex);
+	UINT stride = sizeof(Vertex::PosNormal);
 	UINT offset = 0;
 
 	XMMATRIX view = XMLoadFloat4x4(&mView);
@@ -278,58 +261,111 @@ void LightingApp::DrawScene()
 	XMMATRIX viewProj = view*proj;
 
 	// Set per frame constants.
-	mfxDirLight->SetRawValue(&mDirLight, 0, sizeof(mDirLight));
-	mfxPointLight->SetRawValue(&mPointLight, 0, sizeof(mPointLight));
-	mfxSpotLight->SetRawValue(&mSpotLight, 0, sizeof(mSpotLight));
-	mfxEyePosW->SetRawValue(&mEyePosW, 0, sizeof(mEyePosW));
+	Effects::BasicFX->SetDirLights(mDirLights);
+	Effects::BasicFX->SetEyePosW(mEyePosW);
+
+	// Figure out which technique to use.
+	ID3DX11EffectTechnique* activeTech = Effects::BasicFX->Light1Tech;
+	switch (mLightCount)
+	{
+	case 1:
+		activeTech = Effects::BasicFX->Light1Tech;
+		break;
+	case 2:
+		activeTech = Effects::BasicFX->Light2Tech;
+		break;
+	case 3:
+		activeTech = Effects::BasicFX->Light3Tech;
+		break;
+	}
 
 	D3DX11_TECHNIQUE_DESC techDesc;
-	mTech->GetDesc(&techDesc);
+	activeTech->GetDesc(&techDesc);
 	for (UINT p = 0; p < techDesc.Passes; ++p)
 	{
-		//
-		// Draw the hills.
-		//
-		md3dImmediateContext->IASetVertexBuffers(0, 1, &mLandVB, &stride, &offset);
-		md3dImmediateContext->IASetIndexBuffer(mLandIB, DXGI_FORMAT_R32_UINT, 0);
+		md3dImmediateContext->IASetVertexBuffers(0, 1, &mShapesVB, &stride, &offset);
+		md3dImmediateContext->IASetIndexBuffer(mShapesIB, DXGI_FORMAT_R32_UINT, 0);
 
-		// Set per object constants.
-		XMMATRIX world = XMLoadFloat4x4(&mLandWorld);
+		// Draw the grid.
+		XMMATRIX world = XMLoadFloat4x4(&mGridWorld);
 		XMMATRIX worldInvTranspose = MathHelper::InverseTranspose(world);
 		XMMATRIX worldViewProj = world*view*proj;
 
-		mfxWorld->SetMatrix(reinterpret_cast<float*>(&world));
-		mfxWorldInvTranspose->SetMatrix(reinterpret_cast<float*>(&worldInvTranspose));
-		mfxWorldViewProj->SetMatrix(reinterpret_cast<float*>(&worldViewProj));
-		mfxMaterial->SetRawValue(&mLandMat, 0, sizeof(mLandMat));
+		Effects::BasicFX->SetWorld(world);
+		Effects::BasicFX->SetWorldInvTranspose(worldInvTranspose);
+		Effects::BasicFX->SetWorldViewProj(worldViewProj);
+		Effects::BasicFX->SetMaterial(mGridMat);
 
-		mTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
-		md3dImmediateContext->DrawIndexed(mLandIndexCount, 0, 0);
+		activeTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
+		md3dImmediateContext->DrawIndexed(mGridIndexCount, mGridIndexOffset, mGridVertexOffset);
 
-		//
-		// Draw the waves.
-		//
-		md3dImmediateContext->IASetVertexBuffers(0, 1, &mWavesVB, &stride, &offset);
-		md3dImmediateContext->IASetIndexBuffer(mWavesIB, DXGI_FORMAT_R32_UINT, 0);
-
-		// Set per object constants.
-		world = XMLoadFloat4x4(&mWavesWorld);
+		// Draw the box.
+		world = XMLoadFloat4x4(&mBoxWorld);
 		worldInvTranspose = MathHelper::InverseTranspose(world);
 		worldViewProj = world*view*proj;
 
-		mfxWorld->SetMatrix(reinterpret_cast<float*>(&world));
-		mfxWorldInvTranspose->SetMatrix(reinterpret_cast<float*>(&worldInvTranspose));
-		mfxWorldViewProj->SetMatrix(reinterpret_cast<float*>(&worldViewProj));
-		mfxMaterial->SetRawValue(&mWavesMat, 0, sizeof(mWavesMat));
+		Effects::BasicFX->SetWorld(world);
+		Effects::BasicFX->SetWorldInvTranspose(worldInvTranspose);
+		Effects::BasicFX->SetWorldViewProj(worldViewProj);
+		Effects::BasicFX->SetMaterial(mBoxMat);
 
-		mTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
-		md3dImmediateContext->DrawIndexed(3 * mWaves.TriangleCount(), 0, 0);
+		activeTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
+		md3dImmediateContext->DrawIndexed(mBoxIndexCount, mBoxIndexOffset, mBoxVertexOffset);
+
+		// Draw the cylinders.
+		for (int i = 0; i < 10; ++i)
+		{
+			world = XMLoadFloat4x4(&mCylWorld[i]);
+			worldInvTranspose = MathHelper::InverseTranspose(world);
+			worldViewProj = world*view*proj;
+
+			Effects::BasicFX->SetWorld(world);
+			Effects::BasicFX->SetWorldInvTranspose(worldInvTranspose);
+			Effects::BasicFX->SetWorldViewProj(worldViewProj);
+			Effects::BasicFX->SetMaterial(mCylinderMat);
+
+			activeTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
+			md3dImmediateContext->DrawIndexed(mCylinderIndexCount, mCylinderIndexOffset, mCylinderVertexOffset);
+		}
+
+		// Draw the spheres.
+		for (int i = 0; i < 10; ++i)
+		{
+			world = XMLoadFloat4x4(&mSphereWorld[i]);
+			worldInvTranspose = MathHelper::InverseTranspose(world);
+			worldViewProj = world*view*proj;
+
+			Effects::BasicFX->SetWorld(world);
+			Effects::BasicFX->SetWorldInvTranspose(worldInvTranspose);
+			Effects::BasicFX->SetWorldViewProj(worldViewProj);
+			Effects::BasicFX->SetMaterial(mSphereMat);
+
+			activeTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
+			md3dImmediateContext->DrawIndexed(mSphereIndexCount, mSphereIndexOffset, mSphereVertexOffset);
+		}
+
+		// Draw the skull.
+
+		md3dImmediateContext->IASetVertexBuffers(0, 1, &mSkullVB, &stride, &offset);
+		md3dImmediateContext->IASetIndexBuffer(mSkullIB, DXGI_FORMAT_R32_UINT, 0);
+
+		world = XMLoadFloat4x4(&mSkullWorld);
+		worldInvTranspose = MathHelper::InverseTranspose(world);
+		worldViewProj = world*view*proj;
+
+		Effects::BasicFX->SetWorld(world);
+		Effects::BasicFX->SetWorldInvTranspose(worldInvTranspose);
+		Effects::BasicFX->SetWorldViewProj(worldViewProj);
+		Effects::BasicFX->SetMaterial(mSkullMat);
+
+		activeTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
+		md3dImmediateContext->DrawIndexed(mSkullIndexCount, 0, 0);
 	}
 
 	HR(mSwapChain->Present(0, 0));
 }
 
-void LightingApp::OnMouseDown(WPARAM btnState, int x, int y)
+void LitSkullApp::OnMouseDown(WPARAM btnState, int x, int y)
 {
 	mLastMousePos.x = x;
 	mLastMousePos.y = y;
@@ -337,12 +373,12 @@ void LightingApp::OnMouseDown(WPARAM btnState, int x, int y)
 	SetCapture(mhMainWnd);
 }
 
-void LightingApp::OnMouseUp(WPARAM btnState, int x, int y)
+void LitSkullApp::OnMouseUp(WPARAM btnState, int x, int y)
 {
 	ReleaseCapture();
 }
 
-void LightingApp::OnMouseMove(WPARAM btnState, int x, int y)
+void LitSkullApp::OnMouseMove(WPARAM btnState, int x, int y)
 {
 	if ((btnState & MK_LBUTTON) != 0)
 	{
@@ -359,75 +395,174 @@ void LightingApp::OnMouseMove(WPARAM btnState, int x, int y)
 	}
 	else if ((btnState & MK_RBUTTON) != 0)
 	{
-		// Make each pixel correspond to 0.2 unit in the scene.
-		float dx = 0.2f*static_cast<float>(x - mLastMousePos.x);
-		float dy = 0.2f*static_cast<float>(y - mLastMousePos.y);
+		// Make each pixel correspond to 0.01 unit in the scene.
+		float dx = 0.01f*static_cast<float>(x - mLastMousePos.x);
+		float dy = 0.01f*static_cast<float>(y - mLastMousePos.y);
 
 		// Update the camera radius based on input.
 		mRadius += dx - dy;
 
 		// Restrict the radius.
-		mRadius = MathHelper::Clamp(mRadius, 50.0f, 500.0f);
+		mRadius = MathHelper::Clamp(mRadius, 3.0f, 200.0f);
 	}
 
 	mLastMousePos.x = x;
 	mLastMousePos.y = y;
 }
 
-float LightingApp::GetHillHeight(float x, float z)const
+void LitSkullApp::BuildShapeGeometryBuffers()
 {
-	return 0.3f*(z*sinf(0.1f*x) + x*cosf(0.1f*z));
-}
-
-XMFLOAT3 LightingApp::GetHillNormal(float x, float z)const
-{
-	// n = (-df/dx, 1, -df/dz)
-	XMFLOAT3 n(
-		-0.03f*z*cosf(0.1f*x) - 0.3f*cosf(0.1f*z),
-		1.0f,
-		-0.3f*sinf(0.1f*x) + 0.03f*x*sinf(0.1f*z));
-
-	XMVECTOR unitNormal = XMVector3Normalize(XMLoadFloat3(&n));
-	XMStoreFloat3(&n, unitNormal);
-
-	return n;
-}
-
-void LightingApp::BuildLandGeometryBuffers()
-{
+	GeometryGenerator::MeshData box;
 	GeometryGenerator::MeshData grid;
+	GeometryGenerator::MeshData sphere;
+	GeometryGenerator::MeshData cylinder;
 
 	GeometryGenerator geoGen;
+	geoGen.CreateBox(1.0f, 1.0f, 1.0f, box);
+	geoGen.CreateGrid(20.0f, 30.0f, 60, 40, grid);
+	geoGen.CreateSphere(0.5f, 20, 20, sphere);
+	geoGen.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20, cylinder);
 
-	geoGen.CreateGrid(160.0f, 160.0f, 50, 50, grid);
+	// Cache the vertex offsets to each object in the concatenated vertex buffer.
+	mBoxVertexOffset = 0;
+	mGridVertexOffset = box.Vertices.size();
+	mSphereVertexOffset = mGridVertexOffset + grid.Vertices.size();
+	mCylinderVertexOffset = mSphereVertexOffset + sphere.Vertices.size();
 
-	mLandIndexCount = grid.Indices.size();
+	// Cache the index count of each object.
+	mBoxIndexCount = box.Indices.size();
+	mGridIndexCount = grid.Indices.size();
+	mSphereIndexCount = sphere.Indices.size();
+	mCylinderIndexCount = cylinder.Indices.size();
+
+	// Cache the starting index for each object in the concatenated index buffer.
+	mBoxIndexOffset = 0;
+	mGridIndexOffset = mBoxIndexCount;
+	mSphereIndexOffset = mGridIndexOffset + mGridIndexCount;
+	mCylinderIndexOffset = mSphereIndexOffset + mSphereIndexCount;
+
+	UINT totalVertexCount =
+		box.Vertices.size() +
+		grid.Vertices.size() +
+		sphere.Vertices.size() +
+		cylinder.Vertices.size();
+
+	UINT totalIndexCount =
+		mBoxIndexCount +
+		mGridIndexCount +
+		mSphereIndexCount +
+		mCylinderIndexCount;
 
 	//
-	// Extract the vertex elements we are interested and apply the height function to
-	// each vertex.  
+	// Extract the vertex elements we are interested in and pack the
+	// vertices of all the meshes into one vertex buffer.
 	//
 
-	std::vector<Vertex> vertices(grid.Vertices.size());
-	for (size_t i = 0; i < grid.Vertices.size(); ++i)
+	std::vector<Vertex::PosNormal> vertices(totalVertexCount);
+
+	UINT k = 0;
+	for (size_t i = 0; i < box.Vertices.size(); ++i, ++k)
 	{
-		XMFLOAT3 p = grid.Vertices[i].Position;
+		vertices[k].Pos = box.Vertices[i].Position;
+		vertices[k].Normal = box.Vertices[i].Normal;
+	}
 
-		p.y = GetHillHeight(p.x, p.z);
+	for (size_t i = 0; i < grid.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = grid.Vertices[i].Position;
+		vertices[k].Normal = grid.Vertices[i].Normal;
+	}
 
-		vertices[i].Pos = p;
-		vertices[i].Normal = GetHillNormal(p.x, p.z);
+	for (size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = sphere.Vertices[i].Position;
+		vertices[k].Normal = sphere.Vertices[i].Normal;
+	}
+
+	for (size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = cylinder.Vertices[i].Position;
+		vertices[k].Normal = cylinder.Vertices[i].Normal;
 	}
 
 	D3D11_BUFFER_DESC vbd;
 	vbd.Usage = D3D11_USAGE_IMMUTABLE;
-	vbd.ByteWidth = sizeof(Vertex) * grid.Vertices.size();
+	vbd.ByteWidth = sizeof(Vertex::PosNormal) * totalVertexCount;
 	vbd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	vbd.CPUAccessFlags = 0;
 	vbd.MiscFlags = 0;
 	D3D11_SUBRESOURCE_DATA vinitData;
 	vinitData.pSysMem = &vertices[0];
-	HR(md3dDevice->CreateBuffer(&vbd, &vinitData, &mLandVB));
+	HR(md3dDevice->CreateBuffer(&vbd, &vinitData, &mShapesVB));
+
+	//
+	// Pack the indices of all the meshes into one index buffer.
+	//
+
+	std::vector<UINT> indices;
+	indices.insert(indices.end(), box.Indices.begin(), box.Indices.end());
+	indices.insert(indices.end(), grid.Indices.begin(), grid.Indices.end());
+	indices.insert(indices.end(), sphere.Indices.begin(), sphere.Indices.end());
+	indices.insert(indices.end(), cylinder.Indices.begin(), cylinder.Indices.end());
+
+	D3D11_BUFFER_DESC ibd;
+	ibd.Usage = D3D11_USAGE_IMMUTABLE;
+	ibd.ByteWidth = sizeof(UINT) * totalIndexCount;
+	ibd.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	ibd.CPUAccessFlags = 0;
+	ibd.MiscFlags = 0;
+	D3D11_SUBRESOURCE_DATA iinitData;
+	iinitData.pSysMem = &indices[0];
+	HR(md3dDevice->CreateBuffer(&ibd, &iinitData, &mShapesIB));
+}
+
+void LitSkullApp::BuildSkullGeometryBuffers()
+{
+	std::ifstream fin("Models/skull.txt");
+
+	if (!fin)
+	{
+		MessageBox(0, L"Models/skull.txt not found.", 0, 0);
+		return;
+	}
+
+	UINT vcount = 0;
+	UINT tcount = 0;
+	std::string ignore;
+
+	fin >> ignore >> vcount;
+	fin >> ignore >> tcount;
+	fin >> ignore >> ignore >> ignore >> ignore;
+
+	std::vector<Vertex::PosNormal> vertices(vcount);
+	for (UINT i = 0; i < vcount; ++i)
+	{
+		fin >> vertices[i].Pos.x >> vertices[i].Pos.y >> vertices[i].Pos.z;
+		fin >> vertices[i].Normal.x >> vertices[i].Normal.y >> vertices[i].Normal.z;
+	}
+
+	fin >> ignore;
+	fin >> ignore;
+	fin >> ignore;
+
+	mSkullIndexCount = 3 * tcount;
+	std::vector<UINT> indices(mSkullIndexCount);
+	for (UINT i = 0; i < tcount; ++i)
+	{
+		fin >> indices[i * 3 + 0] >> indices[i * 3 + 1] >> indices[i * 3 + 2];
+	}
+
+	fin.close();
+
+	D3D11_BUFFER_DESC vbd;
+	vbd.Usage = D3D11_USAGE_IMMUTABLE;
+	vbd.ByteWidth = sizeof(Vertex::PosNormal) * vcount;
+	vbd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vbd.CPUAccessFlags = 0;
+	vbd.MiscFlags = 0;
+	D3D11_SUBRESOURCE_DATA vinitData;
+	vinitData.pSysMem = &vertices[0];
+	HR(md3dDevice->CreateBuffer(&vbd, &vinitData, &mSkullVB));
 
 	//
 	// Pack the indices of all the meshes into one index buffer.
@@ -435,103 +570,12 @@ void LightingApp::BuildLandGeometryBuffers()
 
 	D3D11_BUFFER_DESC ibd;
 	ibd.Usage = D3D11_USAGE_IMMUTABLE;
-	ibd.ByteWidth = sizeof(UINT) * mLandIndexCount;
-	ibd.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	ibd.CPUAccessFlags = 0;
-	ibd.MiscFlags = 0;
-	D3D11_SUBRESOURCE_DATA iinitData;
-	iinitData.pSysMem = &grid.Indices[0];
-	HR(md3dDevice->CreateBuffer(&ibd, &iinitData, &mLandIB));
-}
-
-void LightingApp::BuildWaveGeometryBuffers()
-{
-	// Create the vertex buffer.  Note that we allocate space only, as
-	// we will be updating the data every time step of the simulation.
-
-	D3D11_BUFFER_DESC vbd;
-	vbd.Usage = D3D11_USAGE_DYNAMIC;
-	vbd.ByteWidth = sizeof(Vertex) * mWaves.VertexCount();
-	vbd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	vbd.MiscFlags = 0;
-	HR(md3dDevice->CreateBuffer(&vbd, 0, &mWavesVB));
-
-
-	// Create the index buffer.  The index buffer is fixed, so we only 
-	// need to create and set once.
-
-	std::vector<UINT> indices(3 * mWaves.TriangleCount()); // 3 indices per face
-
-														   // Iterate over each quad.
-	UINT m = mWaves.RowCount();
-	UINT n = mWaves.ColumnCount();
-	int k = 0;
-	for (UINT i = 0; i < m - 1; ++i)
-	{
-		for (DWORD j = 0; j < n - 1; ++j)
-		{
-			indices[k] = i*n + j;
-			indices[k + 1] = i*n + j + 1;
-			indices[k + 2] = (i + 1)*n + j;
-
-			indices[k + 3] = (i + 1)*n + j;
-			indices[k + 4] = i*n + j + 1;
-			indices[k + 5] = (i + 1)*n + j + 1;
-
-			k += 6; // next quad
-		}
-	}
-
-	D3D11_BUFFER_DESC ibd;
-	ibd.Usage = D3D11_USAGE_IMMUTABLE;
-	ibd.ByteWidth = sizeof(UINT) * indices.size();
+	ibd.ByteWidth = sizeof(UINT) * mSkullIndexCount;
 	ibd.BindFlags = D3D11_BIND_INDEX_BUFFER;
 	ibd.CPUAccessFlags = 0;
 	ibd.MiscFlags = 0;
 	D3D11_SUBRESOURCE_DATA iinitData;
 	iinitData.pSysMem = &indices[0];
-	HR(md3dDevice->CreateBuffer(&ibd, &iinitData, &mWavesIB));
+	HR(md3dDevice->CreateBuffer(&ibd, &iinitData, &mSkullIB));
 }
 
-void LightingApp::BuildFX()
-{
-	std::ifstream fin("Lighting.fxo", std::ios::binary);
-
-	fin.seekg(0, std::ios_base::end);
-	int size = (int)fin.tellg();
-	fin.seekg(0, std::ios_base::beg);
-	std::vector<char> compiledShader(size);
-
-	fin.read(&compiledShader[0], size);
-	fin.close();
-
-	HR(D3DX11CreateEffectFromMemory(&compiledShader[0], size,
-		0, md3dDevice, &mFX));
-
-	mTech = mFX->GetTechniqueByName("LightTech");
-	mfxWorldViewProj = mFX->GetVariableByName("gWorldViewProj")->AsMatrix();
-	mfxWorld = mFX->GetVariableByName("gWorld")->AsMatrix();
-	mfxWorldInvTranspose = mFX->GetVariableByName("gWorldInvTranspose")->AsMatrix();
-	mfxEyePosW = mFX->GetVariableByName("gEyePosW")->AsVector();
-	mfxDirLight = mFX->GetVariableByName("gDirLight");
-	mfxPointLight = mFX->GetVariableByName("gPointLight");
-	mfxSpotLight = mFX->GetVariableByName("gSpotLight");
-	mfxMaterial = mFX->GetVariableByName("gMaterial");
-}
-
-void LightingApp::BuildVertexLayout()
-{
-	// Create the vertex input layout.
-	D3D11_INPUT_ELEMENT_DESC vertexDesc[] =
-	{
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-		{ "NORMAL",    0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 }
-	};
-
-	// Create the input layout
-	D3DX11_PASS_DESC passDesc;
-	mTech->GetPassByIndex(0)->GetDesc(&passDesc);
-	HR(md3dDevice->CreateInputLayout(vertexDesc, 2, passDesc.pIAInputSignature,
-		passDesc.IAInputSignatureSize, &mInputLayout));
-}
