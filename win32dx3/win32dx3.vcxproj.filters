@@ -51,6 +51,9 @@
     <ClInclude Include="Waves.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="LightHelper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -77,6 +80,9 @@
     <ClCompile Include="Waves.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="LightHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="win32dx3.rc">
@@ -93,6 +99,12 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="color.fx">
+      <Filter>Source Files\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="LightHelper.fx">
+      <Filter>Source Files\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Lighting.fx">
       <Filter>Source Files\Shaders</Filter>
     </FxCompile>
   </ItemGroup>

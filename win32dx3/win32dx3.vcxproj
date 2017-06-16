@@ -151,6 +151,7 @@
     <ClInclude Include="d3dx11effect.h" />
     <ClInclude Include="GameTimer.h" />
     <ClInclude Include="GeometryGenerator.h" />
+    <ClInclude Include="LightHelper.h" />
     <ClInclude Include="MathHelper.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="stdafx.h" />
@@ -163,6 +164,7 @@
     <ClCompile Include="D3DUtil.cpp" />
     <ClCompile Include="GameTimer.cpp" />
     <ClCompile Include="GeometryGenerator.cpp" />
+    <ClCompile Include="LightHelper.cpp" />
     <ClCompile Include="MathHelper.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -182,6 +184,12 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="color.fx">
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(MSBuildProjectDirectory)\%(Filename).fxo</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="LightHelper.fx">
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(MSBuildProjectDirectory)\%(Filename).fxo</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="Lighting.fx">
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(MSBuildProjectDirectory)\%(Filename).fxo</ObjectFileOutput>
     </FxCompile>
   </ItemGroup>

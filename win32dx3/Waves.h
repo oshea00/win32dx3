@@ -1,5 +1,5 @@
 //***************************************************************************************
-// HillsDemo.cpp by Frank Luna (C) 2011 All Rights Reserved.
+// Waves.h by Frank Luna (C) 2011 All Rights Reserved.
 //
 // Performs the calculations for the wave simulation.  After the simulation has been
 // updated, the client must copy the current solution into vertex buffers for rendering.
@@ -9,7 +9,7 @@
 #ifndef WAVES_H
 #define WAVES_H
 
-#include <Windows.h>
+#include <windows.h>
 #include <d3d11_1.h>
 #include <directxmath.h>
 
@@ -25,9 +25,17 @@ public:
 	UINT ColumnCount()const;
 	UINT VertexCount()const;
 	UINT TriangleCount()const;
+	float Width()const;
+	float Depth()const;
 
 	// Returns the solution at the ith grid point.
 	const XMFLOAT3& operator[](int i)const { return mCurrSolution[i]; }
+
+	// Returns the solution normal at the ith grid point.
+	const XMFLOAT3& Normal(int i)const { return mNormals[i]; }
+
+	// Returns the unit tangent vector at the ith grid point in the local x-axis direction.
+	const XMFLOAT3& TangentX(int i)const { return mTangentX[i]; }
 
 	void Init(UINT m, UINT n, float dx, float dt, float speed, float damping);
 	void Update(float dt);
@@ -50,6 +58,8 @@ private:
 
 	XMFLOAT3* mPrevSolution;
 	XMFLOAT3* mCurrSolution;
+	XMFLOAT3* mNormals;
+	XMFLOAT3* mTangentX;
 };
 
 #endif // WAVES_H
