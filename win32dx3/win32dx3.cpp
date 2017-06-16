@@ -17,6 +17,7 @@
 #include <d3dcompiler.h>
 #include <directxmath.h>
 #include <directxcolors.h>
+#include "d3dutil.h"
 #include "resource.h"
 #include "MathHelper.h"
 
@@ -25,7 +26,7 @@ using namespace DirectX;
 //--------------------------------------------------------------------------------------
 // Structures
 //--------------------------------------------------------------------------------------
-struct SimpleVertex
+struct Vertex
 {
 	XMFLOAT3 Pos;
 	XMFLOAT4 Color;
@@ -85,7 +86,7 @@ void Render();
 void OnMouseUp(WPARAM btnState, int x, int y);
 void OnMouseDown(WPARAM btnState, int x, int y);
 void OnMouseMove(WPARAM btnState, int x, int y);
-
+float GetHeight(float x, float z);
 
 //--------------------------------------------------------------------------------------
 // Entry point to the program. Initializes everything and goes into a message processing 
@@ -96,10 +97,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
 
-	if (FAILED(InitWindow(hInstance, nCmdShow)))
+	if (HR(InitWindow(hInstance, nCmdShow)))
 		return 0;
 
-	if (FAILED(InitDevice()))
+	if (HR(InitDevice()))
 	{
 		CleanupDevice();
 		return 0;
@@ -194,7 +195,7 @@ HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szS
 	ID3DBlob* pErrorBlob = nullptr;
 	hr = D3DCompileFromFile(szFileName, nullptr, nullptr, szEntryPoint, szShaderModel,
 		dwShaderFlags, 0, ppBlobOut, &pErrorBlob);
-	if (FAILED(hr))
+	if (HR(hr))
 	{
 		if (pErrorBlob)
 		{
@@ -259,7 +260,7 @@ HRESULT InitDevice()
 		if (SUCCEEDED(hr))
 			break;
 	}
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	// Obtain DXGI factory from device (since we used nullptr for pAdapter above)
@@ -279,7 +280,7 @@ HRESULT InitDevice()
 			dxgiDevice->Release();
 		}
 	}
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	// Create swap chain
@@ -337,18 +338,18 @@ HRESULT InitDevice()
 
 	dxgiFactory->Release();
 
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	// Create a render target view
 	ID3D11Texture2D* pBackBuffer = nullptr;
 	hr = g_pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&pBackBuffer));
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	hr = g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_pRenderTargetView);
 	pBackBuffer->Release();
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, nullptr);
@@ -366,7 +367,7 @@ HRESULT InitDevice()
 	// Compile the vertex shader
 	ID3DBlob* pVSBlob = nullptr;
 	hr = CompileShaderFromFile(L"Example.fx", "VS", "vs_4_0", &pVSBlob);
-	if (FAILED(hr))
+	if (HR(hr))
 	{
 		MessageBox(nullptr,
 			L"The FX file cannot be compiled.  Please run this executable from the directory that contains the FX file.", L"Error", MB_OK);
@@ -375,7 +376,7 @@ HRESULT InitDevice()
 
 	// Create the vertex shader
 	hr = g_pd3dDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), nullptr, &g_pVertexShader);
-	if (FAILED(hr))
+	if (HR(hr))
 	{
 		pVSBlob->Release();
 		return hr;
@@ -393,7 +394,7 @@ HRESULT InitDevice()
 	hr = g_pd3dDevice->CreateInputLayout(layout, numElements, pVSBlob->GetBufferPointer(),
 		pVSBlob->GetBufferSize(), &g_pVertexLayout);
 	pVSBlob->Release();
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	// Set the input layout
@@ -402,7 +403,7 @@ HRESULT InitDevice()
 	// Compile the pixel shader
 	ID3DBlob* pPSBlob = nullptr;
 	hr = CompileShaderFromFile(L"Example.fx", "PS", "ps_4_0", &pPSBlob);
-	if (FAILED(hr))
+	if (HR(hr))
 	{
 		MessageBox(nullptr,
 			L"The FX file cannot be compiled.  Please run this executable from the directory that contains the FX file.", L"Error", MB_OK);
@@ -412,11 +413,11 @@ HRESULT InitDevice()
 	// Create the pixel shader
 	hr = g_pd3dDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), nullptr, &g_pPixelShader);
 	pPSBlob->Release();
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	// Create vertex buffer
-	SimpleVertex vertices[] =
+	Vertex vertices[] =
 	{
 		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) },
 		{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f) },
@@ -430,18 +431,18 @@ HRESULT InitDevice()
 	D3D11_BUFFER_DESC bd;
 	ZeroMemory(&bd, sizeof(bd));
 	bd.Usage = D3D11_USAGE_DEFAULT;
-	bd.ByteWidth = sizeof(SimpleVertex) * 8;
+	bd.ByteWidth = sizeof(Vertex) * 8;
 	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	bd.CPUAccessFlags = 0;
 	D3D11_SUBRESOURCE_DATA InitData;
 	ZeroMemory(&InitData, sizeof(InitData));
 	InitData.pSysMem = vertices;
 	hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &g_pVertexBuffer);
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	// Set vertex buffer
-	UINT stride = sizeof(SimpleVertex);
+	UINT stride = sizeof(Vertex);
 	UINT offset = 0;
 	g_pImmediateContext->IASetVertexBuffers(0, 1, &g_pVertexBuffer, &stride, &offset);
 
@@ -472,7 +473,7 @@ HRESULT InitDevice()
 	bd.CPUAccessFlags = 0;
 	InitData.pSysMem = indices;
 	hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &g_pIndexBuffer);
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	// Set index buffer
@@ -487,7 +488,7 @@ HRESULT InitDevice()
 	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 	bd.CPUAccessFlags = 0;
 	hr = g_pd3dDevice->CreateBuffer(&bd, nullptr, &g_pConstantBuffer);
-	if (FAILED(hr))
+	if (HR(hr))
 		return hr;
 
 	// Initialize the world matrix
@@ -678,4 +679,11 @@ void OnMouseMove(WPARAM btnState, int x, int y)
 	g_LastMousePos.x = x;
 	g_LastMousePos.y = y;
 }
+
+float GetHeight(float x, float z)
+{
+	return 0.3f*(z*sinf(0.1f*x) + x*cosf(0.1f*z));
+}
+
+
 
