@@ -32,6 +32,8 @@
 *.exe
 *.out
 *.app
+*.fxo
+*.cso
 
 **/Debug/*
 **/x64/*

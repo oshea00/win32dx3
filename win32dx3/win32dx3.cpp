@@ -1,689 +1,341 @@
-//--------------------------------------------------------------------------------------
-// File: Tutorial04.cpp
+//***************************************************************************************
+// HillsDemo.cpp by Frank Luna (C) 2011 All Rights Reserved.
 //
-// This application displays a 3D cube using Direct3D 11
+// Demonstrates drawing hills using a grid and 2D function to set the height of each vertex.
 //
-// http://msdn.microsoft.com/en-us/library/windows/apps/ff729721.aspx
+// Controls:
+//		Hold the left mouse button down and move the mouse to rotate.
+//      Hold the right mouse button down to zoom in and out.
 //
-// THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
-// ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-// THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A
-// PARTICULAR PURPOSE.
-//
-// Copyright (c) Microsoft Corporation. All rights reserved.
-//--------------------------------------------------------------------------------------
-#include <windows.h>
-#include <d3d11_1.h>
-#include <d3dcompiler.h>
-#include <directxmath.h>
-#include <directxcolors.h>
-#include "d3dutil.h"
-#include "resource.h"
+//***************************************************************************************
+
+#include "d3dApp.h"
+#include "d3dx11Effect.h"
+#include "GeometryGenerator.h"
 #include "MathHelper.h"
 
-using namespace DirectX;
-
-//--------------------------------------------------------------------------------------
-// Structures
-//--------------------------------------------------------------------------------------
 struct Vertex
 {
 	XMFLOAT3 Pos;
 	XMFLOAT4 Color;
 };
 
-
-struct ConstantBuffer
+class HillsApp : public D3DApp
 {
-	XMMATRIX mWorld;
-	XMMATRIX mView;
-	XMMATRIX mProjection;
+public:
+	HillsApp(HINSTANCE hInstance);
+	~HillsApp();
+
+	bool Init();
+	void OnResize();
+	void UpdateScene(float dt);
+	void DrawScene();
+
+	void OnMouseDown(WPARAM btnState, int x, int y);
+	void OnMouseUp(WPARAM btnState, int x, int y);
+	void OnMouseMove(WPARAM btnState, int x, int y);
+
+private:
+	float GetHeight(float x, float z)const;
+	void BuildGeometryBuffers();
+	void BuildFX();
+	void BuildVertexLayout();
+
+private:
+	ID3D11Buffer* mVB;
+	ID3D11Buffer* mIB;
+
+	ID3DX11Effect* mFX;
+	ID3DX11EffectTechnique* mTech;
+	ID3DX11EffectMatrixVariable* mfxWorldViewProj;
+
+	ID3D11InputLayout* mInputLayout;
+
+	// Define transformations from local spaces to world space.
+	XMFLOAT4X4 mGridWorld;
+
+	UINT mGridIndexCount;
+
+	XMFLOAT4X4 mView;
+	XMFLOAT4X4 mProj;
+
+	float mTheta;
+	float mPhi;
+	float mRadius;
+
+	POINT mLastMousePos;
 };
 
-
-//--------------------------------------------------------------------------------------
-// Global Variables
-//--------------------------------------------------------------------------------------
-HINSTANCE               g_hInst = nullptr;
-HWND                    g_hWnd = nullptr;
-D3D_DRIVER_TYPE         g_driverType = D3D_DRIVER_TYPE_NULL;
-D3D_FEATURE_LEVEL       g_featureLevel = D3D_FEATURE_LEVEL_11_0;
-ID3D11Device*           g_pd3dDevice = nullptr;
-ID3D11Device1*          g_pd3dDevice1 = nullptr;
-ID3D11DeviceContext*    g_pImmediateContext = nullptr;
-ID3D11DeviceContext1*   g_pImmediateContext1 = nullptr;
-IDXGISwapChain*         g_pSwapChain = nullptr;
-IDXGISwapChain1*        g_pSwapChain1 = nullptr;
-ID3D11RenderTargetView* g_pRenderTargetView = nullptr;
-ID3D11VertexShader*     g_pVertexShader = nullptr;
-ID3D11PixelShader*      g_pPixelShader = nullptr;
-ID3D11InputLayout*      g_pVertexLayout = nullptr;
-ID3D11Buffer*           g_pVertexBuffer = nullptr;
-ID3D11Buffer*           g_pIndexBuffer = nullptr;
-ID3D11Buffer*           g_pConstantBuffer = nullptr;
-XMMATRIX                g_World;
-XMMATRIX                g_View;
-XMMATRIX                g_Projection;
-POINT                   g_LastMousePos;
-float                   g_Theta;
-float                   g_Phi;
-float                   g_Radius;
-XMVECTOR                g_Eye;
-XMVECTOR                g_At;
-XMVECTOR                g_Up;
-bool	                g_MouseCapture;
-
-
-
-//--------------------------------------------------------------------------------------
-// Forward declarations
-//--------------------------------------------------------------------------------------
-HRESULT InitWindow(HINSTANCE hInstance, int nCmdShow);
-HRESULT InitDevice();
-void CleanupDevice();
-LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-void Render();
-void OnMouseUp(WPARAM btnState, int x, int y);
-void OnMouseDown(WPARAM btnState, int x, int y);
-void OnMouseMove(WPARAM btnState, int x, int y);
-float GetHeight(float x, float z);
-
-//--------------------------------------------------------------------------------------
-// Entry point to the program. Initializes everything and goes into a message processing 
-// loop. Idle time is used to render the scene.
-//--------------------------------------------------------------------------------------
-int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
+	PSTR cmdLine, int showCmd)
 {
-	UNREFERENCED_PARAMETER(hPrevInstance);
-	UNREFERENCED_PARAMETER(lpCmdLine);
-
-	if (HR(InitWindow(hInstance, nCmdShow)))
-		return 0;
-
-	if (HR(InitDevice()))
-	{
-		CleanupDevice();
-		return 0;
-	}
-
-	g_Radius = 3.0f;
-
-	// Main message loop
-	MSG msg = { 0 };
-	g_MouseCapture = false;
-	while (WM_QUIT != msg.message)
-	{
-		if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
-		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-		else
-		{
-			Render();
-		}
-	}
-
-	CleanupDevice();
-
-	return (int)msg.wParam;
-}
-
-
-
-
-//--------------------------------------------------------------------------------------
-// Register class and create window
-//--------------------------------------------------------------------------------------
-HRESULT InitWindow(HINSTANCE hInstance, int nCmdShow)
-{
-	// Register class
-	WNDCLASSEX wcex;
-	wcex.cbSize = sizeof(WNDCLASSEX);
-	wcex.style = CS_HREDRAW | CS_VREDRAW;
-	wcex.lpfnWndProc = WndProc;
-	wcex.cbClsExtra = 0;
-	wcex.cbWndExtra = 0;
-	wcex.hInstance = hInstance;
-	wcex.hIcon = LoadIcon(hInstance, (LPCTSTR)IDI_SMALL);
-	wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-	wcex.lpszMenuName = nullptr;
-	wcex.lpszClassName = L"d3dExampleWindowClass";
-	wcex.hIconSm = LoadIcon(wcex.hInstance, (LPCTSTR) IDS_APP_TITLE);
-	if (!RegisterClassEx(&wcex))
-		return E_FAIL;
-
-	// Create window
-	g_hInst = hInstance;
-	RECT rc = { 0, 0, 800, 600 };
-	AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
-	g_hWnd = CreateWindow(L"d3dExampleWindowClass", L"My Direct3D 11 Example",
-		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-		CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, hInstance,
-		nullptr);
-	if (!g_hWnd)
-		return E_FAIL;
-
-	ShowWindow(g_hWnd, nCmdShow);
-
-	return S_OK;
-}
-
-
-//--------------------------------------------------------------------------------------
-// Helper for compiling shaders with D3DCompile
-//
-// With VS 11, we could load up prebuilt .cso files instead...
-//--------------------------------------------------------------------------------------
-HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szShaderModel, ID3DBlob** ppBlobOut)
-{
-	HRESULT hr = S_OK;
-
-	DWORD dwShaderFlags = D3DCOMPILE_ENABLE_STRICTNESS;
-#ifdef _DEBUG
-	// Set the D3DCOMPILE_DEBUG flag to embed debug information in the shaders.
-	// Setting this flag improves the shader debugging experience, but still allows 
-	// the shaders to be optimized and to run exactly the way they will run in 
-	// the release configuration of this program.
-	dwShaderFlags |= D3DCOMPILE_DEBUG;
-
-	// Disable optimizations to further improve shader debugging
-	dwShaderFlags |= D3DCOMPILE_SKIP_OPTIMIZATION;
+	// Enable run-time memory check for debug builds.
+#if defined(DEBUG) | defined(_DEBUG)
+	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
 
-	ID3DBlob* pErrorBlob = nullptr;
-	hr = D3DCompileFromFile(szFileName, nullptr, nullptr, szEntryPoint, szShaderModel,
-		dwShaderFlags, 0, ppBlobOut, &pErrorBlob);
-	if (HR(hr))
-	{
-		if (pErrorBlob)
-		{
-			OutputDebugStringA(reinterpret_cast<const char*>(pErrorBlob->GetBufferPointer()));
-			pErrorBlob->Release();
-		}
-		return hr;
-	}
-	if (pErrorBlob) pErrorBlob->Release();
+	HillsApp theApp(hInstance);
 
-	return S_OK;
+	if (!theApp.Init())
+		return 0;
+
+	return theApp.Run();
 }
 
 
-//--------------------------------------------------------------------------------------
-// Create Direct3D device and swap chain
-//--------------------------------------------------------------------------------------
-HRESULT InitDevice()
+HillsApp::HillsApp(HINSTANCE hInstance)
+	: D3DApp(hInstance), mVB(0), mIB(0), mFX(0), mTech(0),
+	mfxWorldViewProj(0), mInputLayout(0), mGridIndexCount(0),
+	mTheta(1.5f*MathHelper::Pi), mPhi(0.1f*MathHelper::Pi), mRadius(200.0f)
 {
-	HRESULT hr = S_OK;
+	mMainWndCaption = L"Hills Demo";
 
-	RECT rc;
-	GetClientRect(g_hWnd, &rc);
-	UINT width = rc.right - rc.left;
-	UINT height = rc.bottom - rc.top;
+	mLastMousePos.x = 0;
+	mLastMousePos.y = 0;
 
-	UINT createDeviceFlags = 0;
-#ifdef _DEBUG
-	createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
+	XMMATRIX I = XMMatrixIdentity();
+	XMStoreFloat4x4(&mGridWorld, I);
+	XMStoreFloat4x4(&mView, I);
+	XMStoreFloat4x4(&mProj, I);
+}
 
-	D3D_DRIVER_TYPE driverTypes[] =
-	{
-		D3D_DRIVER_TYPE_HARDWARE,
-		D3D_DRIVER_TYPE_WARP,
-		D3D_DRIVER_TYPE_REFERENCE,
-	};
-	UINT numDriverTypes = ARRAYSIZE(driverTypes);
+HillsApp::~HillsApp()
+{
+	ReleaseCOM(mVB);
+	ReleaseCOM(mIB);
+	ReleaseCOM(mFX);
+	ReleaseCOM(mInputLayout);
+}
 
-	D3D_FEATURE_LEVEL featureLevels[] =
-	{
-		D3D_FEATURE_LEVEL_11_1,
-		D3D_FEATURE_LEVEL_11_0,
-		D3D_FEATURE_LEVEL_10_1,
-		D3D_FEATURE_LEVEL_10_0,
-	};
-	UINT numFeatureLevels = ARRAYSIZE(featureLevels);
+bool HillsApp::Init()
+{
+	if (!D3DApp::Init())
+		return false;
 
-	for (UINT driverTypeIndex = 0; driverTypeIndex < numDriverTypes; driverTypeIndex++)
-	{
-		g_driverType = driverTypes[driverTypeIndex];
-		hr = D3D11CreateDevice(nullptr, g_driverType, nullptr, createDeviceFlags, featureLevels, numFeatureLevels,
-			D3D11_SDK_VERSION, &g_pd3dDevice, &g_featureLevel, &g_pImmediateContext);
+	BuildGeometryBuffers();
+	BuildFX();
+	BuildVertexLayout();
 
-		if (hr == E_INVALIDARG)
-		{
-			// DirectX 11.0 platforms will not recognize D3D_FEATURE_LEVEL_11_1 so we need to retry without it
-			hr = D3D11CreateDevice(nullptr, g_driverType, nullptr, createDeviceFlags, &featureLevels[1], numFeatureLevels - 1,
-				D3D11_SDK_VERSION, &g_pd3dDevice, &g_featureLevel, &g_pImmediateContext);
-		}
+	return true;
+}
 
-		if (SUCCEEDED(hr))
-			break;
-	}
-	if (HR(hr))
-		return hr;
+void HillsApp::OnResize()
+{
+	D3DApp::OnResize();
 
-	// Obtain DXGI factory from device (since we used nullptr for pAdapter above)
-	IDXGIFactory1* dxgiFactory = nullptr;
-	{
-		IDXGIDevice* dxgiDevice = nullptr;
-		hr = g_pd3dDevice->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&dxgiDevice));
-		if (SUCCEEDED(hr))
-		{
-			IDXGIAdapter* adapter = nullptr;
-			hr = dxgiDevice->GetAdapter(&adapter);
-			if (SUCCEEDED(hr))
-			{
-				hr = adapter->GetParent(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&dxgiFactory));
-				adapter->Release();
-			}
-			dxgiDevice->Release();
-		}
-	}
-	if (HR(hr))
-		return hr;
+	XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f*MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);
+	XMStoreFloat4x4(&mProj, P);
+}
 
-	// Create swap chain
-	IDXGIFactory2* dxgiFactory2 = nullptr;
-	hr = dxgiFactory->QueryInterface(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(&dxgiFactory2));
-	if (dxgiFactory2)
-	{
-		// DirectX 11.1 or later
-		hr = g_pd3dDevice->QueryInterface(__uuidof(ID3D11Device1), reinterpret_cast<void**>(&g_pd3dDevice1));
-		if (SUCCEEDED(hr))
-		{
-			(void)g_pImmediateContext->QueryInterface(__uuidof(ID3D11DeviceContext1), reinterpret_cast<void**>(&g_pImmediateContext1));
-		}
+void HillsApp::UpdateScene(float dt)
+{
+	// Convert Spherical to Cartesian coordinates.
+	float x = mRadius*sinf(mPhi)*cosf(mTheta);
+	float z = mRadius*sinf(mPhi)*sinf(mTheta);
+	float y = mRadius*cosf(mPhi);
 
-		DXGI_SWAP_CHAIN_DESC1 sd;
-		ZeroMemory(&sd, sizeof(sd));
-		sd.Width = width;
-		sd.Height = height;
-		sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		sd.SampleDesc.Count = 1;
-		sd.SampleDesc.Quality = 0;
-		sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		sd.BufferCount = 1;
+	// Build the view matrix.
+	XMVECTOR pos = XMVectorSet(x, y, z, 1.0f);
+	XMVECTOR target = XMVectorZero();
+	XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
-		hr = dxgiFactory2->CreateSwapChainForHwnd(g_pd3dDevice, g_hWnd, &sd, nullptr, nullptr, &g_pSwapChain1);
-		if (SUCCEEDED(hr))
-		{
-			hr = g_pSwapChain1->QueryInterface(__uuidof(IDXGISwapChain), reinterpret_cast<void**>(&g_pSwapChain));
-		}
+	XMMATRIX V = XMMatrixLookAtLH(pos, target, up);
+	XMStoreFloat4x4(&mView, V);
+}
 
-		dxgiFactory2->Release();
-	}
-	else
-	{
-		// DirectX 11.0 systems
-		DXGI_SWAP_CHAIN_DESC sd;
-		ZeroMemory(&sd, sizeof(sd));
-		sd.BufferCount = 1;
-		sd.BufferDesc.Width = width;
-		sd.BufferDesc.Height = height;
-		sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		sd.BufferDesc.RefreshRate.Numerator = 60;
-		sd.BufferDesc.RefreshRate.Denominator = 1;
-		sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		sd.OutputWindow = g_hWnd;
-		sd.SampleDesc.Count = 1;
-		sd.SampleDesc.Quality = 0;
-		sd.Windowed = TRUE;
+void HillsApp::DrawScene()
+{
+	md3dImmediateContext->ClearRenderTargetView(mRenderTargetView, reinterpret_cast<const float*>(&Colors::LightSteelBlue));
+	md3dImmediateContext->ClearDepthStencilView(mDepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
-		hr = dxgiFactory->CreateSwapChain(g_pd3dDevice, &sd, &g_pSwapChain);
-	}
+	md3dImmediateContext->IASetInputLayout(mInputLayout);
+	md3dImmediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	// Note this tutorial doesn't handle full-screen swapchains so we block the ALT+ENTER shortcut
-	dxgiFactory->MakeWindowAssociation(g_hWnd, DXGI_MWA_NO_ALT_ENTER);
 
-	dxgiFactory->Release();
-
-	if (HR(hr))
-		return hr;
-
-	// Create a render target view
-	ID3D11Texture2D* pBackBuffer = nullptr;
-	hr = g_pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&pBackBuffer));
-	if (HR(hr))
-		return hr;
-
-	hr = g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_pRenderTargetView);
-	pBackBuffer->Release();
-	if (HR(hr))
-		return hr;
-
-	g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, nullptr);
-
-	// Setup the viewport
-	D3D11_VIEWPORT vp;
-	vp.Width = (FLOAT)width;
-	vp.Height = (FLOAT)height;
-	vp.MinDepth = 0.0f;
-	vp.MaxDepth = 1.0f;
-	vp.TopLeftX = 0;
-	vp.TopLeftY = 0;
-	g_pImmediateContext->RSSetViewports(1, &vp);
-
-	// Compile the vertex shader
-	ID3DBlob* pVSBlob = nullptr;
-	hr = CompileShaderFromFile(L"Example.fx", "VS", "vs_4_0", &pVSBlob);
-	if (HR(hr))
-	{
-		MessageBox(nullptr,
-			L"The FX file cannot be compiled.  Please run this executable from the directory that contains the FX file.", L"Error", MB_OK);
-		return hr;
-	}
-
-	// Create the vertex shader
-	hr = g_pd3dDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), nullptr, &g_pVertexShader);
-	if (HR(hr))
-	{
-		pVSBlob->Release();
-		return hr;
-	}
-
-	// Define the input layout
-	D3D11_INPUT_ELEMENT_DESC layout[] =
-	{
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-	};
-	UINT numElements = ARRAYSIZE(layout);
-
-	// Create the input layout
-	hr = g_pd3dDevice->CreateInputLayout(layout, numElements, pVSBlob->GetBufferPointer(),
-		pVSBlob->GetBufferSize(), &g_pVertexLayout);
-	pVSBlob->Release();
-	if (HR(hr))
-		return hr;
-
-	// Set the input layout
-	g_pImmediateContext->IASetInputLayout(g_pVertexLayout);
-
-	// Compile the pixel shader
-	ID3DBlob* pPSBlob = nullptr;
-	hr = CompileShaderFromFile(L"Example.fx", "PS", "ps_4_0", &pPSBlob);
-	if (HR(hr))
-	{
-		MessageBox(nullptr,
-			L"The FX file cannot be compiled.  Please run this executable from the directory that contains the FX file.", L"Error", MB_OK);
-		return hr;
-	}
-
-	// Create the pixel shader
-	hr = g_pd3dDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), nullptr, &g_pPixelShader);
-	pPSBlob->Release();
-	if (HR(hr))
-		return hr;
-
-	// Create vertex buffer
-	Vertex vertices[] =
-	{
-		{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f) },
-		{ XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT4(0.0f, 1.0f, 1.0f, 1.0f) },
-		{ XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f) },
-		{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(1.0f, 0.0f, 1.0f, 1.0f) },
-		{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f) },
-		{ XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f) },
-		{ XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f) },
-	};
-	D3D11_BUFFER_DESC bd;
-	ZeroMemory(&bd, sizeof(bd));
-	bd.Usage = D3D11_USAGE_DEFAULT;
-	bd.ByteWidth = sizeof(Vertex) * 8;
-	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	bd.CPUAccessFlags = 0;
-	D3D11_SUBRESOURCE_DATA InitData;
-	ZeroMemory(&InitData, sizeof(InitData));
-	InitData.pSysMem = vertices;
-	hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &g_pVertexBuffer);
-	if (HR(hr))
-		return hr;
-
-	// Set vertex buffer
 	UINT stride = sizeof(Vertex);
 	UINT offset = 0;
-	g_pImmediateContext->IASetVertexBuffers(0, 1, &g_pVertexBuffer, &stride, &offset);
+	md3dImmediateContext->IASetVertexBuffers(0, 1, &mVB, &stride, &offset);
+	md3dImmediateContext->IASetIndexBuffer(mIB, DXGI_FORMAT_R32_UINT, 0);
 
-	// Create index buffer
-	WORD indices[] =
+	// Set constants
+
+	XMMATRIX view = XMLoadFloat4x4(&mView);
+	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+	XMMATRIX world = XMLoadFloat4x4(&mGridWorld);
+	XMMATRIX worldViewProj = world*view*proj;
+
+	D3DX11_TECHNIQUE_DESC techDesc;
+	mTech->GetDesc(&techDesc);
+	for (UINT p = 0; p < techDesc.Passes; ++p)
 	{
-		3,1,0,
-		2,1,3,
+		// Draw the grid.
+		mfxWorldViewProj->SetMatrix(reinterpret_cast<float*>(&worldViewProj));
+		mTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
+		md3dImmediateContext->DrawIndexed(mGridIndexCount, 0, 0);
+	}
 
-		0,5,4,
-		1,5,0,
-
-		3,4,7,
-		0,4,3,
-
-		1,6,5,
-		2,6,1,
-
-		2,7,6,
-		3,7,2,
-
-		6,4,5,
-		7,4,6,
-	};
-	bd.Usage = D3D11_USAGE_DEFAULT;
-	bd.ByteWidth = sizeof(WORD) * 36;        // 36 vertices needed for 12 triangles in a triangle list
-	bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	bd.CPUAccessFlags = 0;
-	InitData.pSysMem = indices;
-	hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &g_pIndexBuffer);
-	if (HR(hr))
-		return hr;
-
-	// Set index buffer
-	g_pImmediateContext->IASetIndexBuffer(g_pIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
-
-	// Set primitive topology
-	g_pImmediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-	// Create the constant buffer
-	bd.Usage = D3D11_USAGE_DEFAULT;
-	bd.ByteWidth = sizeof(ConstantBuffer);
-	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	bd.CPUAccessFlags = 0;
-	hr = g_pd3dDevice->CreateBuffer(&bd, nullptr, &g_pConstantBuffer);
-	if (HR(hr))
-		return hr;
-
-	// Initialize the world matrix
-	g_World = XMMatrixIdentity();
-
-	// Initialize the view matrix
-	g_Eye = XMVectorSet(0.0f, 0.0f, 3.0f, 0.0f);
-	g_At = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-	g_Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-	g_View = XMMatrixLookAtLH(g_Eye, g_At, g_Up);
-
-	// Initialize the projection matrix
-	g_Projection = XMMatrixPerspectiveFovLH(XM_PIDIV2, width / (FLOAT)height, 0.01f, 100.0f);
-
-	return S_OK;
+	HR(mSwapChain->Present(0, 0));
 }
 
-
-//--------------------------------------------------------------------------------------
-// Clean up the objects we've created
-//--------------------------------------------------------------------------------------
-void CleanupDevice()
+void HillsApp::OnMouseDown(WPARAM btnState, int x, int y)
 {
-	if (g_pImmediateContext) g_pImmediateContext->ClearState();
+	mLastMousePos.x = x;
+	mLastMousePos.y = y;
 
-	if (g_pConstantBuffer) g_pConstantBuffer->Release();
-	if (g_pVertexBuffer) g_pVertexBuffer->Release();
-	if (g_pIndexBuffer) g_pIndexBuffer->Release();
-	if (g_pVertexLayout) g_pVertexLayout->Release();
-	if (g_pVertexShader) g_pVertexShader->Release();
-	if (g_pPixelShader) g_pPixelShader->Release();
-	if (g_pRenderTargetView) g_pRenderTargetView->Release();
-	if (g_pSwapChain1) g_pSwapChain1->Release();
-	if (g_pSwapChain) g_pSwapChain->Release();
-	if (g_pImmediateContext1) g_pImmediateContext1->Release();
-	if (g_pImmediateContext) g_pImmediateContext->Release();
-	if (g_pd3dDevice1) g_pd3dDevice1->Release();
-	if (g_pd3dDevice) g_pd3dDevice->Release();
+	SetCapture(mhMainWnd);
 }
 
-
-//--------------------------------------------------------------------------------------
-// Called every time the application receives a message
-//--------------------------------------------------------------------------------------
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-	PAINTSTRUCT ps;
-	HDC hdc;
-
-	switch (message)
-	{
-	case WM_PAINT:
-		hdc = BeginPaint(hWnd, &ps);
-		EndPaint(hWnd, &ps);
-		break;
-
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		break;
-
-	case WM_LBUTTONDOWN:
-	case WM_RBUTTONDOWN:
-		OnMouseDown(wParam, LOWORD(lParam), HIWORD(lParam));
-		break;
-	case WM_LBUTTONUP:
-	case WM_RBUTTONUP:
-		OnMouseUp(wParam, LOWORD(lParam), HIWORD(lParam));
-		break;
-	case WM_MOUSEMOVE:
-		OnMouseMove(wParam, LOWORD(lParam), HIWORD(lParam));
-		break;
-
-		// Note that this tutorial does not handle resizing (WM_SIZE) requests,
-		// so we created the window without the resize border.
-
-	default:
-		return DefWindowProc(hWnd, message, wParam, lParam);
-	}
-
-	return 0;
-}
-
-
-//--------------------------------------------------------------------------------------
-// Render a frame
-//--------------------------------------------------------------------------------------
-void Render()
-{
-	if (g_MouseCapture)
-	{
-		// Convert mouse location to update view location
-		float x = g_Radius * sinf(g_Phi) * cosf(g_Theta);
-		float y = g_Radius * sinf(g_Phi) * sinf(g_Theta);
-		float z = g_Radius * cosf(g_Phi);
-		g_Eye = XMVectorSet(x, y, z, 1.0f);
-		g_At = XMVectorZero();
-		g_Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-		if (!(XMVector3Equal(g_Eye, XMVectorZero()) ||
-			  XMVector3Equal(g_Up, XMVectorZero())))
-		{
-			auto view = XMMatrixLookAtLH(g_Eye, g_At, g_Up);
-			g_View = view;
-		}
-	}
-
-	// Update our time
-	static float t = 0.0f;
-	if (g_driverType == D3D_DRIVER_TYPE_REFERENCE)
-	{
-		t += (float)XM_PI * 0.0125f;
-	}
-	else
-	{
-		static ULONGLONG timeStart = 0;
-		ULONGLONG timeCur = GetTickCount64();
-		if (timeStart == 0)
-			timeStart = timeCur;
-		t = (timeCur - timeStart) / 1000.0f;
-	}
-
-	//
-	// Animate the cube
-	//
-	//g_World = XMMatrixRotationY(t);
-
-	//
-	// Clear the back buffer
-	//
-	g_pImmediateContext->ClearRenderTargetView(g_pRenderTargetView, Colors::MidnightBlue);
-
-	//
-	// Update variables
-	//
-	ConstantBuffer cb;
-	cb.mWorld = XMMatrixTranspose(g_World);
-	cb.mView = XMMatrixTranspose(g_View);
-	cb.mProjection = XMMatrixTranspose(g_Projection);
-	g_pImmediateContext->UpdateSubresource(g_pConstantBuffer, 0, nullptr, &cb, 0, 0);
-
-	//
-	// Renders a triangle
-	//
-	g_pImmediateContext->VSSetShader(g_pVertexShader, nullptr, 0);
-	g_pImmediateContext->VSSetConstantBuffers(0, 1, &g_pConstantBuffer);
-	g_pImmediateContext->PSSetShader(g_pPixelShader, nullptr, 0);
-	g_pImmediateContext->DrawIndexed(36, 0, 0);        // 36 vertices needed for 12 triangles in a triangle list
-
-													   //
-													   // Present our back buffer to our front buffer
-													   //
-	g_pSwapChain->Present(0, 0);
-}
-
-void OnMouseUp(WPARAM btnState, int x, int y)
+void HillsApp::OnMouseUp(WPARAM btnState, int x, int y)
 {
 	ReleaseCapture();
-	g_MouseCapture = false;
 }
 
-void OnMouseDown(WPARAM btnState, int x, int y)
-{
-	g_LastMousePos.x = x;
-	g_LastMousePos.y = y;
-	SetCapture(g_hWnd);
-	g_MouseCapture = true;
-}
-
-void OnMouseMove(WPARAM btnState, int x, int y)
+void HillsApp::OnMouseMove(WPARAM btnState, int x, int y)
 {
 	if ((btnState & MK_LBUTTON) != 0)
 	{
-		// Interpret change in position as 1/4 degree per pixel
-		float dx = XMConvertToRadians(0.25f * static_cast<float>(x - g_LastMousePos.x));
-		float dy = XMConvertToRadians(0.25f * static_cast<float>(y - g_LastMousePos.y));
+		// Make each pixel correspond to a quarter of a degree.
+		float dx = XMConvertToRadians(0.25f*static_cast<float>(x - mLastMousePos.x));
+		float dy = XMConvertToRadians(0.25f*static_cast<float>(y - mLastMousePos.y));
 
-		g_Theta += dx;
-		g_Phi   += dy;
-		g_Phi = MathHelper::Clamp(g_Phi, 0.1f, (float)XM_PI - 0.1f);
+		// Update angles based on input to orbit camera around box.
+		mTheta += dx;
+		mPhi += dy;
+
+		// Restrict the angle mPhi.
+		mPhi = MathHelper::Clamp(mPhi, 0.1f, MathHelper::Pi - 0.1f);
 	}
 	else if ((btnState & MK_RBUTTON) != 0)
 	{
-		float dx = 0.005*static_cast<float>(x - g_LastMousePos.x);
-		float dy = 0.005*static_cast<float>(y - g_LastMousePos.y);
+		// Make each pixel correspond to 0.2 unit in the scene.
+		float dx = 0.2f*static_cast<float>(x - mLastMousePos.x);
+		float dy = 0.2f*static_cast<float>(y - mLastMousePos.y);
 
-		g_Radius += dx - dy;
-		g_Radius = MathHelper::Clamp(g_Radius, 3.0f, 15.0f);
+		// Update the camera radius based on input.
+		mRadius += dx - dy;
+
+		// Restrict the radius.
+		mRadius = MathHelper::Clamp(mRadius, 50.0f, 500.0f);
 	}
-	g_LastMousePos.x = x;
-	g_LastMousePos.y = y;
+
+	mLastMousePos.x = x;
+	mLastMousePos.y = y;
 }
 
-float GetHeight(float x, float z)
+float HillsApp::GetHeight(float x, float z)const
 {
 	return 0.3f*(z*sinf(0.1f*x) + x*cosf(0.1f*z));
 }
 
+void HillsApp::BuildGeometryBuffers()
+{
+	GeometryGenerator::MeshData grid;
 
+	GeometryGenerator geoGen;
 
+	geoGen.CreateGrid(160.0f, 160.0f, 50, 50, grid);
+
+	mGridIndexCount = grid.Indices.size();
+
+	//
+	// Extract the vertex elements we are interested and apply the height function to
+	// each vertex.  In addition, color the vertices based on their height so we have
+	// sandy looking beaches, grassy low hills, and snow mountain peaks.
+	//
+
+	std::vector<Vertex> vertices(grid.Vertices.size());
+	for (size_t i = 0; i < grid.Vertices.size(); ++i)
+	{
+		XMFLOAT3 p = grid.Vertices[i].Position;
+
+		p.y = GetHeight(p.x, p.z);
+
+		vertices[i].Pos = p;
+
+		// Color the vertex based on its height.
+		if (p.y < -10.0f)
+		{
+			// Sandy beach color.
+			vertices[i].Color = XMFLOAT4(1.0f, 0.96f, 0.62f, 1.0f);
+		}
+		else if (p.y < 5.0f)
+		{
+			// Light yellow-green.
+			vertices[i].Color = XMFLOAT4(0.48f, 0.77f, 0.46f, 1.0f);
+		}
+		else if (p.y < 12.0f)
+		{
+			// Dark yellow-green.
+			vertices[i].Color = XMFLOAT4(0.1f, 0.48f, 0.19f, 1.0f);
+		}
+		else if (p.y < 20.0f)
+		{
+			// Dark brown.
+			vertices[i].Color = XMFLOAT4(0.45f, 0.39f, 0.34f, 1.0f);
+		}
+		else
+		{
+			// White snow.
+			vertices[i].Color = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+		}
+	}
+
+	D3D11_BUFFER_DESC vbd;
+	vbd.Usage = D3D11_USAGE_IMMUTABLE;
+	vbd.ByteWidth = sizeof(Vertex) * grid.Vertices.size();
+	vbd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vbd.CPUAccessFlags = 0;
+	vbd.MiscFlags = 0;
+	D3D11_SUBRESOURCE_DATA vinitData;
+	vinitData.pSysMem = &vertices[0];
+	HR(md3dDevice->CreateBuffer(&vbd, &vinitData, &mVB));
+
+	//
+	// Pack the indices of all the meshes into one index buffer.
+	//
+
+	D3D11_BUFFER_DESC ibd;
+	ibd.Usage = D3D11_USAGE_IMMUTABLE;
+	ibd.ByteWidth = sizeof(UINT) * mGridIndexCount;
+	ibd.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	ibd.CPUAccessFlags = 0;
+	ibd.MiscFlags = 0;
+	D3D11_SUBRESOURCE_DATA iinitData;
+	iinitData.pSysMem = &grid.Indices[0];
+	HR(md3dDevice->CreateBuffer(&ibd, &iinitData, &mIB));
+}
+
+void HillsApp::BuildFX()
+{
+	std::ifstream fin("color.fxo", std::ios::binary);
+
+	fin.seekg(0, std::ios_base::end);
+	int size = (int)fin.tellg();
+	fin.seekg(0, std::ios_base::beg);
+	std::vector<char> compiledShader(size);
+
+	fin.read(&compiledShader[0], size);
+	fin.close();
+
+	HR(D3DX11CreateEffectFromMemory(&compiledShader[0], size,
+		0, md3dDevice, &mFX));
+
+	mTech = mFX->GetTechniqueByName("ColorTech");
+	mfxWorldViewProj = mFX->GetVariableByName("gWorldViewProj")->AsMatrix();
+}
+
+void HillsApp::BuildVertexLayout()
+{
+	// Create the vertex input layout.
+	D3D11_INPUT_ELEMENT_DESC vertexDesc[] =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+	};
+
+	// Create the input layout
+	D3DX11_PASS_DESC passDesc;
+	mTech->GetPassByIndex(0)->GetDesc(&passDesc);
+	HR(md3dDevice->CreateInputLayout(vertexDesc, 2, passDesc.pIAInputSignature,
+		passDesc.IAInputSignatureSize, &mInputLayout));
+}
