@@ -8,7 +8,6 @@
 //      Hold the right mouse button down to zoom in and out.
 //
 //***************************************************************************************
-
 #include "d3dApp.h"
 #include "d3dx11Effect.h"
 #include "GeometryGenerator.h"
@@ -20,11 +19,11 @@ struct Vertex
 	XMFLOAT4 Color;
 };
 
-class ShapesApp : public D3DApp
+class SkullApp : public D3DApp
 {
 public:
-	ShapesApp(HINSTANCE hInstance);
-	~ShapesApp();
+	SkullApp(HINSTANCE hInstance);
+	~SkullApp();
 
 	bool Init();
 	void OnResize();
@@ -53,29 +52,12 @@ private:
 	ID3D11RasterizerState* mWireframeRS;
 
 	// Define transformations from local spaces to world space.
-	XMFLOAT4X4 mSphereWorld[10];
-	XMFLOAT4X4 mCylWorld[10];
-	XMFLOAT4X4 mBoxWorld;
-	XMFLOAT4X4 mGridWorld;
-	XMFLOAT4X4 mCenterSphere;
+	XMFLOAT4X4 mSkullWorld;
+
+	UINT mSkullIndexCount;
 
 	XMFLOAT4X4 mView;
 	XMFLOAT4X4 mProj;
-
-	int mBoxVertexOffset;
-	int mGridVertexOffset;
-	int mSphereVertexOffset;
-	int mCylinderVertexOffset;
-
-	UINT mBoxIndexOffset;
-	UINT mGridIndexOffset;
-	UINT mSphereIndexOffset;
-	UINT mCylinderIndexOffset;
-
-	UINT mBoxIndexCount;
-	UINT mGridIndexCount;
-	UINT mSphereIndexCount;
-	UINT mCylinderIndexCount;
 
 	float mTheta;
 	float mPhi;
@@ -92,7 +74,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
 
-	ShapesApp theApp(hInstance);
+	SkullApp theApp(hInstance);
 
 	if (!theApp.Init())
 		return 0;
@@ -101,40 +83,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 }
 
 
-ShapesApp::ShapesApp(HINSTANCE hInstance)
+SkullApp::SkullApp(HINSTANCE hInstance)
 	: D3DApp(hInstance), mVB(0), mIB(0), mFX(0), mTech(0),
-	mfxWorldViewProj(0), mInputLayout(0), mWireframeRS(0),
-	mTheta(1.5f*MathHelper::Pi), mPhi(0.1f*MathHelper::Pi), mRadius(15.0f)
+	mfxWorldViewProj(0), mInputLayout(0), mWireframeRS(0), mSkullIndexCount(0),
+	mTheta(1.5f*MathHelper::Pi), mPhi(0.1f*MathHelper::Pi), mRadius(20.0f)
 {
-	mMainWndCaption = L"Shapes Demo";
+	mMainWndCaption = L"Skull Demo";
 
 	mLastMousePos.x = 0;
 	mLastMousePos.y = 0;
 
 	XMMATRIX I = XMMatrixIdentity();
-	XMStoreFloat4x4(&mGridWorld, I);
 	XMStoreFloat4x4(&mView, I);
 	XMStoreFloat4x4(&mProj, I);
 
-	XMMATRIX boxScale = XMMatrixScaling(2.0f, 1.0f, 2.0f);
-	XMMATRIX boxOffset = XMMatrixTranslation(0.0f, 0.5f, 0.0f);
-	XMStoreFloat4x4(&mBoxWorld, XMMatrixMultiply(boxScale, boxOffset));
-
-	XMMATRIX centerSphereScale = XMMatrixScaling(2.0f, 2.0f, 2.0f);
-	XMMATRIX centerSphereOffset = XMMatrixTranslation(0.0f, 2.0f, 0.0f);
-	XMStoreFloat4x4(&mCenterSphere, XMMatrixMultiply(centerSphereScale, centerSphereOffset));
-
-	for (int i = 0; i < 5; ++i)
-	{
-		XMStoreFloat4x4(&mCylWorld[i * 2 + 0], XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i*5.0f));
-		XMStoreFloat4x4(&mCylWorld[i * 2 + 1], XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i*5.0f));
-
-		XMStoreFloat4x4(&mSphereWorld[i * 2 + 0], XMMatrixTranslation(-5.0f, 3.5f, -10.0f + i*5.0f));
-		XMStoreFloat4x4(&mSphereWorld[i * 2 + 1], XMMatrixTranslation(+5.0f, 3.5f, -10.0f + i*5.0f));
-	}
+	XMMATRIX T = XMMatrixTranslation(0.0f, -2.0f, 0.0f);
+	XMStoreFloat4x4(&mSkullWorld, T);
 }
 
-ShapesApp::~ShapesApp()
+SkullApp::~SkullApp()
 {
 	ReleaseCOM(mVB);
 	ReleaseCOM(mIB);
@@ -143,7 +110,7 @@ ShapesApp::~ShapesApp()
 	ReleaseCOM(mWireframeRS);
 }
 
-bool ShapesApp::Init()
+bool SkullApp::Init()
 {
 	if (!D3DApp::Init())
 		return false;
@@ -164,7 +131,7 @@ bool ShapesApp::Init()
 	return true;
 }
 
-void ShapesApp::OnResize()
+void SkullApp::OnResize()
 {
 	D3DApp::OnResize();
 
@@ -172,7 +139,7 @@ void ShapesApp::OnResize()
 	XMStoreFloat4x4(&mProj, P);
 }
 
-void ShapesApp::UpdateScene(float dt)
+void SkullApp::UpdateScene(float dt)
 {
 	// Convert Spherical to Cartesian coordinates.
 	float x = mRadius*sinf(mPhi)*cosf(mTheta);
@@ -188,7 +155,7 @@ void ShapesApp::UpdateScene(float dt)
 	XMStoreFloat4x4(&mView, V);
 }
 
-void ShapesApp::DrawScene()
+void SkullApp::DrawScene()
 {
 	md3dImmediateContext->ClearRenderTargetView(mRenderTargetView, reinterpret_cast<const float*>(&Colors::LightSteelBlue));
 	md3dImmediateContext->ClearDepthStencilView(mDepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
@@ -207,53 +174,23 @@ void ShapesApp::DrawScene()
 
 	XMMATRIX view = XMLoadFloat4x4(&mView);
 	XMMATRIX proj = XMLoadFloat4x4(&mProj);
-	XMMATRIX viewProj = view*proj;
+	XMMATRIX world = XMLoadFloat4x4(&mSkullWorld);
+	XMMATRIX worldViewProj = world*view*proj;
+
+	mfxWorldViewProj->SetMatrix(reinterpret_cast<float*>(&worldViewProj));
 
 	D3DX11_TECHNIQUE_DESC techDesc;
 	mTech->GetDesc(&techDesc);
 	for (UINT p = 0; p < techDesc.Passes; ++p)
 	{
-		// Draw the grid.
-		XMMATRIX world = XMLoadFloat4x4(&mGridWorld);
-		mfxWorldViewProj->SetMatrix(reinterpret_cast<float*>(&(world*viewProj)));
 		mTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
-		md3dImmediateContext->DrawIndexed(mGridIndexCount, mGridIndexOffset, mGridVertexOffset);
-
-		// Draw the box.
-		world = XMLoadFloat4x4(&mBoxWorld);
-		mfxWorldViewProj->SetMatrix(reinterpret_cast<float*>(&(world*viewProj)));
-		mTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
-		md3dImmediateContext->DrawIndexed(mBoxIndexCount, mBoxIndexOffset, mBoxVertexOffset);
-
-		// Draw center sphere.
-		world = XMLoadFloat4x4(&mCenterSphere);
-		mfxWorldViewProj->SetMatrix(reinterpret_cast<float*>(&(world*viewProj)));
-		mTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
-		md3dImmediateContext->DrawIndexed(mSphereIndexCount, mSphereIndexOffset, mSphereVertexOffset);
-
-		// Draw the cylinders.
-		for (int i = 0; i < 10; ++i)
-		{
-			world = XMLoadFloat4x4(&mCylWorld[i]);
-			mfxWorldViewProj->SetMatrix(reinterpret_cast<float*>(&(world*viewProj)));
-			mTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
-			md3dImmediateContext->DrawIndexed(mCylinderIndexCount, mCylinderIndexOffset, mCylinderVertexOffset);
-		}
-
-		// Draw the spheres.
-		for (int i = 0; i < 10; ++i)
-		{
-			world = XMLoadFloat4x4(&mSphereWorld[i]);
-			mfxWorldViewProj->SetMatrix(reinterpret_cast<float*>(&(world*viewProj)));
-			mTech->GetPassByIndex(p)->Apply(0, md3dImmediateContext);
-			md3dImmediateContext->DrawIndexed(mSphereIndexCount, mSphereIndexOffset, mSphereVertexOffset);
-		}
+		md3dImmediateContext->DrawIndexed(mSkullIndexCount, 0, 0);
 	}
 
 	HR(mSwapChain->Present(0, 0));
 }
 
-void ShapesApp::OnMouseDown(WPARAM btnState, int x, int y)
+void SkullApp::OnMouseDown(WPARAM btnState, int x, int y)
 {
 	mLastMousePos.x = x;
 	mLastMousePos.y = y;
@@ -261,12 +198,12 @@ void ShapesApp::OnMouseDown(WPARAM btnState, int x, int y)
 	SetCapture(mhMainWnd);
 }
 
-void ShapesApp::OnMouseUp(WPARAM btnState, int x, int y)
+void SkullApp::OnMouseUp(WPARAM btnState, int x, int y)
 {
 	ReleaseCapture();
 }
 
-void ShapesApp::OnMouseMove(WPARAM btnState, int x, int y)
+void SkullApp::OnMouseMove(WPARAM btnState, int x, int y)
 {
 	if ((btnState & MK_LBUTTON) != 0)
 	{
@@ -283,102 +220,69 @@ void ShapesApp::OnMouseMove(WPARAM btnState, int x, int y)
 	}
 	else if ((btnState & MK_RBUTTON) != 0)
 	{
-		// Make each pixel correspond to 0.01 unit in the scene.
-		float dx = 0.01f*static_cast<float>(x - mLastMousePos.x);
-		float dy = 0.01f*static_cast<float>(y - mLastMousePos.y);
+		// Make each pixel correspond to 0.2 unit in the scene.
+		float dx = 0.05f*static_cast<float>(x - mLastMousePos.x);
+		float dy = 0.05f*static_cast<float>(y - mLastMousePos.y);
 
 		// Update the camera radius based on input.
 		mRadius += dx - dy;
 
 		// Restrict the radius.
-		mRadius = MathHelper::Clamp(mRadius, 3.0f, 200.0f);
+		mRadius = MathHelper::Clamp(mRadius, 5.0f, 50.0f);
 	}
 
 	mLastMousePos.x = x;
 	mLastMousePos.y = y;
 }
 
-void ShapesApp::BuildGeometryBuffers()
+void SkullApp::BuildGeometryBuffers()
 {
-	GeometryGenerator::MeshData box;
-	GeometryGenerator::MeshData grid;
-	GeometryGenerator::MeshData sphere;
-	GeometryGenerator::MeshData cylinder;
+	std::ifstream fin("../Models/skull.txt");
 
-	GeometryGenerator geoGen;
-	geoGen.CreateBox(1.0f, 1.0f, 1.0f, box);
-	geoGen.CreateGrid(20.0f, 30.0f, 60, 40, grid);
-	geoGen.CreateSphere(0.5f, 20, 20, sphere);
-	//geoGen.CreateGeosphere(0.5f, 2, sphere);
-	geoGen.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20, cylinder);
+	if (!fin)
+	{
+		MessageBox(0, L"Models/skull.txt not found.", 0, 0);
+		return;
+	}
 
-	// Cache the vertex offsets to each object in the concatenated vertex buffer.
-	mBoxVertexOffset = 0;
-	mGridVertexOffset = box.Vertices.size();
-	mSphereVertexOffset = mGridVertexOffset + grid.Vertices.size();
-	mCylinderVertexOffset = mSphereVertexOffset + sphere.Vertices.size();
+	UINT vcount = 0;
+	UINT tcount = 0;
+	std::string ignore;
 
-	// Cache the index count of each object.
-	mBoxIndexCount = box.Indices.size();
-	mGridIndexCount = grid.Indices.size();
-	mSphereIndexCount = sphere.Indices.size();
-	mCylinderIndexCount = cylinder.Indices.size();
+	fin >> ignore >> vcount;
+	fin >> ignore >> tcount;
+	fin >> ignore >> ignore >> ignore >> ignore;
 
-	// Cache the starting index for each object in the concatenated index buffer.
-	mBoxIndexOffset = 0;
-	mGridIndexOffset = mBoxIndexCount;
-	mSphereIndexOffset = mGridIndexOffset + mGridIndexCount;
-	mCylinderIndexOffset = mSphereIndexOffset + mSphereIndexCount;
-
-	UINT totalVertexCount =
-		box.Vertices.size() +
-		grid.Vertices.size() +
-		sphere.Vertices.size() +
-		cylinder.Vertices.size();
-
-	UINT totalIndexCount =
-		mBoxIndexCount +
-		mGridIndexCount +
-		mSphereIndexCount +
-		mCylinderIndexCount;
-
-	//
-	// Extract the vertex elements we are interested in and pack the
-	// vertices of all the meshes into one vertex buffer.
-	//
-
-	std::vector<Vertex> vertices(totalVertexCount);
-
+	float nx, ny, nz;
 	XMFLOAT4 black(0.0f, 0.0f, 0.0f, 1.0f);
 
-	UINT k = 0;
-	for (size_t i = 0; i < box.Vertices.size(); ++i, ++k)
+	std::vector<Vertex> vertices(vcount);
+	for (UINT i = 0; i < vcount; ++i)
 	{
-		vertices[k].Pos = box.Vertices[i].Position;
-		vertices[k].Color = black;
+		fin >> vertices[i].Pos.x >> vertices[i].Pos.y >> vertices[i].Pos.z;
+
+		vertices[i].Color = black;
+
+		// Normal not used in this demo.
+		fin >> nx >> ny >> nz;
 	}
 
-	for (size_t i = 0; i < grid.Vertices.size(); ++i, ++k)
+	fin >> ignore;
+	fin >> ignore;
+	fin >> ignore;
+
+	mSkullIndexCount = 3 * tcount;
+	std::vector<UINT> indices(mSkullIndexCount);
+	for (UINT i = 0; i < tcount; ++i)
 	{
-		vertices[k].Pos = grid.Vertices[i].Position;
-		vertices[k].Color = black;
+		fin >> indices[i * 3 + 0] >> indices[i * 3 + 1] >> indices[i * 3 + 2];
 	}
 
-	for (size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
-	{
-		vertices[k].Pos = sphere.Vertices[i].Position;
-		vertices[k].Color = black;
-	}
-
-	for (size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
-	{
-		vertices[k].Pos = cylinder.Vertices[i].Position;
-		vertices[k].Color = black;
-	}
+	fin.close();
 
 	D3D11_BUFFER_DESC vbd;
 	vbd.Usage = D3D11_USAGE_IMMUTABLE;
-	vbd.ByteWidth = sizeof(Vertex) * totalVertexCount;
+	vbd.ByteWidth = sizeof(Vertex) * vcount;
 	vbd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	vbd.CPUAccessFlags = 0;
 	vbd.MiscFlags = 0;
@@ -390,15 +294,9 @@ void ShapesApp::BuildGeometryBuffers()
 	// Pack the indices of all the meshes into one index buffer.
 	//
 
-	std::vector<UINT> indices;
-	indices.insert(indices.end(), box.Indices.begin(), box.Indices.end());
-	indices.insert(indices.end(), grid.Indices.begin(), grid.Indices.end());
-	indices.insert(indices.end(), sphere.Indices.begin(), sphere.Indices.end());
-	indices.insert(indices.end(), cylinder.Indices.begin(), cylinder.Indices.end());
-
 	D3D11_BUFFER_DESC ibd;
 	ibd.Usage = D3D11_USAGE_IMMUTABLE;
-	ibd.ByteWidth = sizeof(UINT) * totalIndexCount;
+	ibd.ByteWidth = sizeof(UINT) * mSkullIndexCount;
 	ibd.BindFlags = D3D11_BIND_INDEX_BUFFER;
 	ibd.CPUAccessFlags = 0;
 	ibd.MiscFlags = 0;
@@ -407,7 +305,7 @@ void ShapesApp::BuildGeometryBuffers()
 	HR(md3dDevice->CreateBuffer(&ibd, &iinitData, &mIB));
 }
 
-void ShapesApp::BuildFX()
+void SkullApp::BuildFX()
 {
 	std::ifstream fin("color.fxo", std::ios::binary);
 
@@ -426,7 +324,7 @@ void ShapesApp::BuildFX()
 	mfxWorldViewProj = mFX->GetVariableByName("gWorldViewProj")->AsMatrix();
 }
 
-void ShapesApp::BuildVertexLayout()
+void SkullApp::BuildVertexLayout()
 {
 	// Create the vertex input layout.
 	D3D11_INPUT_ELEMENT_DESC vertexDesc[] =
